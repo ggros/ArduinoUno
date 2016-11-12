@@ -55,18 +55,32 @@ byte button_flag[NUM_KEYS];
 // menu definition
 char menu_items[NUM_MENU_ITEM][12]={
   "TEMPERATURE",
-  "RELAIS",
   "BACKLIGHT",
   "HEURE",
-  "VANNE"	
+  "VANNE",
+  "SMENU"	
 };
-
 void (*menu_funcs[NUM_MENU_ITEM])(void) = {
   temperature,
-  relais,
   toogleBacklight,
   horloge,
-  vanne
+  vanne,
+  smenu
+};
+char smenu_items_1[NUM_MENU_ITEM][12]={
+  "RELAIS",
+  "VIDE",
+  "VIDE",
+  "ABOUT",
+  "RETOUR"	
+};
+
+void (*smenu_funcs_1[NUM_MENU_ITEM])(void) = {
+  relais,
+  about,
+  about,
+  about,
+  exit_smenu
 };
 
 char current_menu_item;
@@ -115,37 +129,54 @@ void setup()
   // Setup timer2 -- Prescaler/256
   TCCR2A &= ~((1<<WGM21) | (1<<WGM20));
   TCCR2B &= ~(1<<WGM22);
-  TCCR2B = (1<<CS22)|(1<<CS21);      
-
+  TCCR2B = (1<<CS22)|(1<<CS21);
   ASSR |=(0<<AS2);
 
   // Use normal mode  
-  TCCR2A =0;    
+  TCCR2A =0;  
   //Timer2 Overflow Interrupt Enable  
   TIMSK2 |= (0<<OCIE2A);
   TCNT2=0x6;  // counting starts from 6;  
-  TIMSK2 = (1<<TOIE2);    
-
-
-
+  TIMSK2 = (1<<TOIE2);
   SREG|=1<<SREG_I;
 
+  //lcd init
   lcd.LCD_init();
   lcd.LCD_clear();
-
-  //menu initialization
-  init_MENU();
-  current_menu_item = 0;	
-
-  
   //lcd.backlight(ON);//Turn on the backlight
   lcd.backlight(OFF); // Turn off the backlight  
+
+  //menu initialization  
+  init_MENU(menu_items);
+  //init_MENU();
+  current_menu_item = 0;  
   
   // reserve 200 bytes for the inputString on Serial  
   inputString.reserve(200);
 }
 int backLight = 0;//variable for toggle function below
 int modeNuitEco = 0;
+void menu_run(char items[][12], void (*f[NUM_MENU_ITEM])(void) );
+/* loop */
+void loop()
+{
+  //à chaque loop on regarde l'heure.
+  verifModeNuit();
+  vanne_commande();
+  serial_cmd();
+  menu_run(menu_items, menu_funcs);
+}
+int exit_submenu;
+void smenu(){
+  exit_submenu = 0;
+  init_MENU(smenu_items_1);
+  while (!exit_submenu){
+    menu_run(smenu_items_1, smenu_funcs_1);
+  }
+}
+void exit_smenu(){
+  exit_submenu = 1;
+}
 /*
   Test de l'horloge, de 23h à 7h on ferme la vanne et arret bruleur
   */
@@ -180,51 +211,8 @@ void verifModeNuit(){
   }
   //,second());
 }
-/* loop */
-void loop()
-{
-  //à chaque loop on regarde l'heure.
-  verifModeNuit();
-  vanne_commande();
-  
-  byte i;
-  for(i=0; i<NUM_KEYS; i++){
-    if(button_flag[i] !=0){
 
-      button_flag[i]=0;  // reset button flag
-      switch(i){
-
-      case UP_KEY:
-        // current item to normal display
-        lcd.LCD_write_string(MENU_X, MENU_Y + current_menu_item, menu_items[current_menu_item], MENU_NORMAL );
-        current_menu_item -=1;
-        if(current_menu_item <0)  current_menu_item = NUM_MENU_ITEM -1;
-        // next item to highlight display
-        lcd.LCD_write_string(MENU_X, MENU_Y + current_menu_item, menu_items[current_menu_item], MENU_HIGHLIGHT );
-        break;
-      case DOWN_KEY:
-        // current item to normal display
-        lcd.LCD_write_string(MENU_X, MENU_Y + current_menu_item, menu_items[current_menu_item], MENU_NORMAL );
-        current_menu_item +=1;
-        if(current_menu_item >(NUM_MENU_ITEM-1))  current_menu_item = 0;
-        // next item to highlight display
-        lcd.LCD_write_string(MENU_X, MENU_Y + current_menu_item, menu_items[current_menu_item], MENU_HIGHLIGHT );
-        break;
-      case LEFT_KEY:
-        init_MENU();
-        current_menu_item = 0;
-        break;   
-      case CENTER_KEY:
-        lcd.LCD_clear();
-        (*menu_funcs[current_menu_item])();
-        lcd.LCD_clear();
-        init_MENU();
-        current_menu_item = 0;           
-        break;	
-      }
-    }
-  }
-  
+void serial_cmd(){
   // print the string when a newline arrives:
   if (stringComplete) {
     Serial.println(inputString); //echo
@@ -232,6 +220,15 @@ void loop()
       int T = getT();
       Serial.println(T);
     }
+    else if(inputString == "CMD TINT"){
+      int T = getTNTC(A2);
+      Serial.println(T);
+    }
+    else if(inputString == "CMD TEXT"){
+      int T = getTNTC(A3);
+      Serial.println(T);
+    }
+    
     // clear the string:
     inputString = "";
     stringComplete = false;
@@ -259,17 +256,55 @@ void serialEvent() {
    }
 }
 /* menu functions */
-
-void init_MENU(void){
-
+void init_MENU(char items[][12]){
+//void init_MENU(){
   byte i;
   lcd.LCD_clear();
-  lcd.LCD_write_string(MENU_X, MENU_Y, menu_items[0], MENU_HIGHLIGHT );
+  lcd.LCD_write_string(MENU_X, MENU_Y, items[0], MENU_HIGHLIGHT );
   for (i=1; i<NUM_MENU_ITEM; i++){
-    lcd.LCD_write_string(MENU_X, MENU_Y+i, menu_items[i], MENU_NORMAL);
+    lcd.LCD_write_string(MENU_X, MENU_Y+i, items[i], MENU_NORMAL);
   }
 }
+void menu_run(char items[][12], void (*f[NUM_MENU_ITEM])(void) ){
+  byte i;
+  for(i=0; i<NUM_KEYS; i++){
+    if(button_flag[i] !=0){
 
+      button_flag[i]=0;  // reset button flag
+      switch(i){
+
+      case UP_KEY:
+        // current item to normal display
+        lcd.LCD_write_string(MENU_X, MENU_Y + current_menu_item, items[current_menu_item], MENU_NORMAL );
+        current_menu_item -=1;
+        if(current_menu_item <0)  current_menu_item = NUM_MENU_ITEM -1;
+        // next item to highlight display
+        lcd.LCD_write_string(MENU_X, MENU_Y + current_menu_item, items[current_menu_item], MENU_HIGHLIGHT );
+        break;
+      case DOWN_KEY:
+        // current item to normal display
+        lcd.LCD_write_string(MENU_X, MENU_Y + current_menu_item, items[current_menu_item], MENU_NORMAL );
+        current_menu_item +=1;
+        if(current_menu_item >(NUM_MENU_ITEM-1))  current_menu_item = 0;
+        // next item to highlight display
+        lcd.LCD_write_string(MENU_X, MENU_Y + current_menu_item, items[current_menu_item], MENU_HIGHLIGHT );
+        break;
+      case LEFT_KEY:
+        init_MENU(items);
+        current_menu_item = 0;
+        break;   
+      case CENTER_KEY:
+        lcd.LCD_clear();
+        //(*menu_funcs[current_menu_item])();
+        (*f[current_menu_item])();
+        lcd.LCD_clear();
+        init_MENU(items);
+        current_menu_item = 0;           
+        break;	
+      }
+    }
+  }
+}
 // waiting for center key press
 void waitfor_OKkey(){
   byte i;
@@ -542,47 +577,53 @@ void relais(){
         lcd.LCD_write_string(84-15, 0, str3, MENU_NORMAL);
         //print state
         int xPos = 0;
-        int xCoef = 20;
+        int xCoef = 2*6+2;
         int typeMenu = MENU_NORMAL;
+        lcd.LCD_write_string( xPos*xCoef, 2, "ML", MENU_NORMAL);
         if(currentPin - 9 == xPos) typeMenu = MENU_HIGHLIGHT; else typeMenu = MENU_NORMAL;
         if(bitRead(State, xPos)){
-           lcd.LCD_write_string( xPos++*xCoef, 3, "ON ", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "ON", typeMenu);
         }
         else{
-           lcd.LCD_write_string( xPos++*xCoef, 3, "OFF", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "OF", typeMenu);
         }
+        lcd.LCD_write_string( xPos*xCoef, 2, "Y2", MENU_NORMAL);
         if(currentPin - 9 == xPos) typeMenu = MENU_HIGHLIGHT; else typeMenu = MENU_NORMAL;
         if(bitRead(State, xPos)){
-           lcd.LCD_write_string( xPos++*xCoef, 3, "ON ", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "ON", typeMenu);
         }
         else{
-           lcd.LCD_write_string( xPos++*xCoef, 3, "OFF", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "OF", typeMenu);
         }
+        lcd.LCD_write_string( xPos*xCoef, 2, "BR", MENU_NORMAL);
         if(currentPin - 9 == xPos) typeMenu = MENU_HIGHLIGHT; else typeMenu = MENU_NORMAL;
         if(bitRead(State, xPos)){
-           lcd.LCD_write_string( xPos++*xCoef, 3, "ON ", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "ON", typeMenu);
         }
         else{
-           lcd.LCD_write_string( xPos++*xCoef, 3, "OFF", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "OF", typeMenu);
         }
+        lcd.LCD_write_string( xPos*xCoef, 2, "PP", MENU_NORMAL);
         if(currentPin - 9 == xPos) typeMenu = MENU_HIGHLIGHT; else typeMenu = MENU_NORMAL;
         if(bitRead(State, xPos)){
-           lcd.LCD_write_string( xPos++*xCoef, 3, "ON ", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "ON", typeMenu);
         }
         else{
-           lcd.LCD_write_string( xPos++*xCoef, 3, "OFF", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "OF", typeMenu);
         }
+        lcd.LCD_write_string( xPos*xCoef, 2, "13", MENU_NORMAL);
         if(currentPin - 9 == xPos) typeMenu = MENU_HIGHLIGHT; else typeMenu = MENU_NORMAL;
         if(bitRead(State, xPos)){
-           lcd.LCD_write_string( xPos++*xCoef, 3, "ON ", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "ON", typeMenu);
         }
         else{
-           lcd.LCD_write_string( xPos++*xCoef, 3, "OFF", typeMenu);
+           lcd.LCD_write_string( xPos++*xCoef, 3, "OF", typeMenu);
         }
       }
     }
   }
 }
+/*
 void relaisOn(){
    // turn the ledPin on:        
    digitalWrite(ledPin, HIGH); 
@@ -609,7 +650,7 @@ void bitmap(){
   lcd.LCD_write_string(38, 5, "OK", MENU_HIGHLIGHT );
   waitfor_OKkey();
 }
-
+*/
 void horloge(){
 
   lcd.LCD_write_string( 0, 0, "Horloge", MENU_NORMAL);
