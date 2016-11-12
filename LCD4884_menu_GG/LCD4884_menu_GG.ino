@@ -10,6 +10,8 @@ Date       : 06.01.2012
 
 * Update the library and sketch to compatible with IDE V1.0 and earlier
 Display size 84x48
+font 6x8: 6 lines of 14 chars
+font Big: Only for numbers 0-9 +/-
 */
 
 #include "LCD4884.h"
@@ -75,6 +77,10 @@ int I1Pin = 10; // mélangeur, position par défault Y2 passant => fermeture
 int I2Pin = 11; // bruleur, position par défault inter fermé => bruleur actif
 int I3Pin = 12; // pompe, position par défaut inter fermé => pompe active
 
+//for Srial
+String inputString = "";         // a string to hold incoming data
+boolean stringComplete = false;  // whether the string is complete
+
 void setup()
 {
   //on met l'horloge au moins en 2016
@@ -135,10 +141,14 @@ void setup()
   //lcd.backlight(ON);//Turn on the backlight
   lcd.backlight(OFF); // Turn off the backlight  
   
-  //turn
+  // reserve 200 bytes for the inputString on Serial  
+  inputString.reserve(200);
 }
 int backLight = 0;//variable for toggle function below
 int modeNuitEco = 0;
+/*
+  Test de l'horloge, de 23h à 7h on ferme la vanne et arret bruleur
+  */
 void verifModeNuit(){
   //test de l'heure pour le mode nuit
   //attention si on est dans une des sous fonctions ça déclenche pas
@@ -148,10 +158,11 @@ void verifModeNuit(){
       //on ferme la vanne
       digitalWrite(I1OnPin,1);//D9
       digitalWrite(I1Pin,1);//D10
+//      TRef = 0;//la commande va fermer
       //arret bruleur et pompe.
       digitalWrite(I2Pin,0);
       digitalWrite(I3Pin,0);
-      Serial.println("Passage en mode nuit Eco");
+      Serial.println("INFO Passage en mode nuit Eco");
     }
     modeNuitEco = 1;
   }
@@ -163,7 +174,7 @@ void verifModeNuit(){
       //dem bruleur et pompe.
       digitalWrite(I2Pin,1);
       digitalWrite(I3Pin,1);
-      Serial.println("Passage en mode jour");
+      Serial.println("INFO Passage en mode jour");
     }
     modeNuitEco = 0;
   }
@@ -174,6 +185,7 @@ void loop()
 {
   //à chaque loop on regarde l'heure.
   verifModeNuit();
+  vanne_commande();
   
   byte i;
   for(i=0; i<NUM_KEYS; i++){
@@ -212,23 +224,50 @@ void loop()
       }
     }
   }
+  
+  // print the string when a newline arrives:
+  if (stringComplete) {
+    Serial.println(inputString); //echo
+    if(inputString == "CMD T"){
+      int T = getT();
+      Serial.println(T);
+    }
+    // clear the string:
+    inputString = "";
+    stringComplete = false;
+  }
 }
-
+/*
+   SerialEvent occurs whenever a new data comes in the
+  hardware serial RX.  This routine is run between each
+  time loop() runs, so using delay inside loop can delay
+  response.  Multiple bytes of data may be available.
+  */
+void serialEvent() {
+   while (Serial.available()) {
+     // get the new byte:
+     char inChar = (char)Serial.read();
+     // if the incoming character is a newline, set a flag
+     // so the main loop can do something about it:
+     if (inChar == '\n') {
+       stringComplete = true;      
+     }
+     else{
+       // add it to the inputString:
+       inputString += inChar; 
+     }
+   }
+}
 /* menu functions */
 
 void init_MENU(void){
 
   byte i;
-
   lcd.LCD_clear();
-
   lcd.LCD_write_string(MENU_X, MENU_Y, menu_items[0], MENU_HIGHLIGHT );
-
   for (i=1; i<NUM_MENU_ITEM; i++){
     lcd.LCD_write_string(MENU_X, MENU_Y+i, menu_items[i], MENU_NORMAL);
   }
-
-
 }
 
 // waiting for center key press
@@ -243,7 +282,6 @@ void waitfor_OKkey(){
       }
     }
   }
-
 }
 //Sonde Nickel (QAC 21) sortie melangeur
 int getT(){
@@ -345,7 +383,7 @@ int getR2StrNTC(char* str_temp,int sensorPin){
   for(t_index = 0; t_index<QAC31_R_SIZE; t_index++){
     if(QAC31_R[t_index] < R2) break;//valeur dépassée car R diminue avec la temperature
   }
-  sprintf(str_temp,"%i", t_index-35-1);
+  sprintf(str_temp,"%02d.00", t_index-35-1);
   
   //sprintf(str_temp,"%s C", str_temp);
   //sprintf(str_temp,"%f C", T);//%f not implemented
@@ -378,30 +416,42 @@ int getTNTC(int sensorPin){
   //sprintf(str_temp,"%i", t_index-35-1);  
   return t_index-35-1;
 }
-void temperature()
-{
+void temperature_display(char* strRes, char* strTemp, char* strPin){
+  //lcd.LCD_clear();
   lcd.LCD_write_string(78, 2, "C", MENU_NORMAL);
   lcd.LCD_write_string(38, 5, "OK", MENU_HIGHLIGHT );
-  
-  char str[8];
-  char str2[10];
-  char str3[10];
+  lcd.LCD_write_string(0, 0, strRes, MENU_NORMAL);
+  lcd.LCD_write_string(84-15, 0, strPin, MENU_NORMAL);
+  lcd.LCD_write_string_big(8, 2, strTemp, MENU_NORMAL);//X,Y,str,mode
+}
+/*
+  Affiche en haut la resistance lu
+  A droite le sensorPin (15, 16, 17)
+  au milieu en gros la temperature
+  */
+void temperature()
+{
+  //temperature_init()
+  char strTemp[8];
+  char strRes[10];
+  char strPin[10];
   int sensorPin = A1;//A1, A2, A3 = 15,16,17
-  itoa(sensorPin,str3,10);
-  lcd.LCD_write_string(84-15, 0, str3, MENU_NORMAL);
+  itoa(sensorPin,strPin,10);
+
   //Sonde Nickel
-  int R2 = getR2Str(str);
-  itoa(R2,str2,10);
+  int R2 = getR2Str(strTemp);
+  //itoa(R2,strRes,10);
+  sprintf(strRes,"%0d",R2);
   
-  lcd.LCD_write_string(0, 0, str2, MENU_NORMAL);  
-  lcd.LCD_write_string_big(8, 2, str, MENU_NORMAL);//X,Y,str,mode  
+  temperature_display(strRes, strTemp, strPin);
   
 
   //waitfor_OKkey();
   byte i;
   byte key = 0xFF;
+  // boucle attente sortie avec CENTER_KEY
   while (key!= CENTER_KEY){
-    
+    //test joystick   
     for(i=0; i<NUM_KEYS; i++){
       if(button_flag[i] !=0){
         button_flag[i]=0;  // reset button flag
@@ -414,26 +464,24 @@ void temperature()
           Serial.println("RIGHT");
           if(sensorPin<A3) sensorPin++;
         }  
-        itoa(sensorPin,str3,10);
-        lcd.LCD_write_string(84-15, 0, str3, MENU_NORMAL);
-        lcd.LCD_write_string_big(8, 2, "________", MENU_NORMAL); 
+        itoa(sensorPin,strPin,10);
+        temperature_display(strRes, strTemp, strPin);
       }
     }
     if(millis() % 500 == 0){
       if(sensorPin == A1){
         //Sonde Nickel
-        R2 = getR2Str(str);
-        itoa(R2,str2,10);
+        R2 = getR2Str(strTemp);
+        //itoa(R2,strRes,10);
+        sprintf(strRes,"%d.00",R2);
       }
       else if(sensorPin == A2 || sensorPin == A3){
         //Sonde NTC
-        R2 = getR2StrNTC(str, sensorPin);
-        itoa(R2,str2,10);
+        R2 = getR2StrNTC(strTemp, sensorPin);
+        //itoa(R2,strRes,10);
+        sprintf(strRes,"%d.00",R2);
       }
-      lcd.LCD_write_string(0, 0, "           ", MENU_NORMAL);
-      
-      lcd.LCD_write_string(0, 0, str2, MENU_NORMAL);      
-      lcd.LCD_write_string_big(8, 2, str, MENU_NORMAL);      
+      temperature_display(strRes, strTemp, strPin);      
     }
     //delay(100);//stop 100ms
   }
@@ -551,8 +599,6 @@ void charmap(){
       lcd.LCD_write_char(i*14+j+32, MENU_NORMAL);
     }
   }
-
-
   lcd.LCD_write_string(38, 5, "OK", MENU_HIGHLIGHT );
   waitfor_OKkey();   
 }
@@ -628,13 +674,49 @@ void horloge(){
 
 }
 int TRef = 50;
+unsigned long lastCmdMs = 0;
+int vanne_commande(){
+    int action = 0;
+    //temp int et ext
+    int Tinterieur = getTNTC(A2);
+    int Text = getTNTC(A3);
+        
+    //T Nickel, sortie vanne
+    int T = getT();
+        
+    //Commande
+    int delta = 2;
+    
+    //on gère la remise à 0 tout les 50J
+    if(millis() > lastCmdMs+10000 || millis() <= lastCmdMs){
+      lastCmdMs = millis();
+      if(T<TRef-delta){
+        action = 1;
+        digitalWrite(I1OnPin,1);//D9
+        digitalWrite(I1Pin,0);//D10
+      }
+      else if(T>TRef+delta){
+        action = -1;
+        digitalWrite(I1OnPin,1);//D9
+        digitalWrite(I1Pin,1);//D10
+      }
+      else{
+        action = 0;
+        digitalWrite(I1OnPin,0);//D9
+      }
+      //delay(500);
+    }
+    else{
+      action = 2; //continue
+    }
+    return action;
+}
 void vanne(){
   lcd.LCD_write_string( 0, 0, "Vanne", MENU_NORMAL);
   lcd.LCD_write_string(78, 2, "C", MENU_NORMAL);
   lcd.LCD_write_string(38, 5, "OK", MENU_HIGHLIGHT );
   int T;
-  char str[10];
-  unsigned long lastCmdMs = 0;
+  char str[10];  
   byte i;
   byte key = 0xFF;
   while (key!= CENTER_KEY){
@@ -665,14 +747,13 @@ void vanne(){
         }
       }
     }
-    
-    
     //temp int et ext
     T = getTNTC(A2);
     itoa(T,str,10);
     lcd.LCD_write_string(8, 1, str, MENU_NORMAL);
     T = getTNTC(A3);
     itoa(T,str,10);
+    sprintf(str,"%02d",T);
     lcd.LCD_write_string(30, 1, str, MENU_NORMAL);
     
     //Tref et T Nickel
@@ -682,35 +763,27 @@ void vanne(){
     itoa(T,str,10);
     lcd.LCD_write_string(8, 2, str, MENU_NORMAL);
     
-    //Commande
-    int delta = 2;
-    
-    //on gère la remise à 0 tout les 50J
-    if(millis() > lastCmdMs+10000 || millis() <= lastCmdMs){
-      lastCmdMs = millis();
-      lcd.LCD_write_string(0, 3, "G", MENU_NORMAL);
-      if(T<TRef-delta){
+    int action = vanne_commande();
+    switch(action){
+      case 1:
         lcd.LCD_write_string(8, 3, "Ouverture", MENU_NORMAL);
-        digitalWrite(I1OnPin,1);//D9
-        digitalWrite(I1Pin,0);//D10
-      }
-      else if(T>TRef+delta){
-        lcd.LCD_write_string(8, 3, "Fermeture", MENU_NORMAL);
-        digitalWrite(I1OnPin,1);//D9
-        digitalWrite(I1Pin,1);//D10
-      }
-      else{
+        lcd.LCD_write_string(0, 3, "G", MENU_NORMAL);
+        break;
+      case 0:
         lcd.LCD_write_string(8, 3, "Arret    ", MENU_NORMAL);
-        digitalWrite(I1OnPin,0);//D9
-      }
-      delay(500);
+        lcd.LCD_write_string(0, 3, "G", MENU_NORMAL);
+        break;
+      case -1:
+        lcd.LCD_write_string(8, 3, "Fermeture", MENU_NORMAL);
+        lcd.LCD_write_string(0, 3, "G", MENU_NORMAL);
+        break;
+      case 2://continue
+        lcd.LCD_write_string(0, 3, " ", MENU_NORMAL);
+        break;
     }
-    else{
-      lcd.LCD_write_string(0, 3, " ", MENU_NORMAL);
-    }
+    
     delay(100);//stop 100ms
-  }
-  
+  }  
 }
 void about(){
 
