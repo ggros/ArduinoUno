@@ -91,6 +91,12 @@ int I1Pin = 10; // mélangeur, position par défault Y2 passant => fermeture
 int I2Pin = 11; // bruleur, position par défault inter fermé => bruleur actif
 int I3Pin = 12; // pompe, position par défaut inter fermé => pompe active
 
+//courbe de chauffe
+int TRef = 40;
+int autoTemp = 1;
+float courbeChauffeB = 26.43;//déplacement
+float courbeChauffeA = 1.2857;//pente
+
 //for Srial
 String inputString = "";         // a string to hold incoming data
 boolean stringComplete = false;  // whether the string is complete
@@ -216,6 +222,7 @@ void serial_cmd(){
   // print the string when a newline arrives:
   if (stringComplete) {
     Serial.println(inputString); //echo
+    
     if(inputString == "CMD T"){
       int T = getT();
       Serial.println(T);
@@ -227,6 +234,19 @@ void serial_cmd(){
     else if(inputString == "CMD TEXT"){
       int T = getTNTC(A3);
       Serial.println(T);
+    }
+    else if(inputString == "CMD TREF"){
+      Serial.println(TRef);
+    }
+    else if(inputString.startsWith("CMD BR") && inputString.length() == 7){
+      String c = inputString.substring(6,7);
+      Serial.println(c);
+      digitalWrite(I2Pin,c == "1");
+    }
+    else if(inputString.startsWith("CMD PP") && inputString.length() == 7){
+      String c = inputString.substring(6,7);
+      Serial.println(c);
+      digitalWrite(I3Pin,c == "1");
     }
     
     // clear the string:
@@ -714,14 +734,17 @@ void horloge(){
   }
 
 }
-int TRef = 50;
 unsigned long lastCmdMs = 0;
 int vanne_commande(){
     int action = 0;
     //temp int et ext
     int Tinterieur = getTNTC(A2);
     int Text = getTNTC(A3);
-        
+    
+    int TPente = courbeChauffeB + (20-Text) * courbeChauffeA;
+    if(autoTemp){
+      TRef = TPente;
+    }
     //T Nickel, sortie vanne
     int T = getT();
         
@@ -756,7 +779,7 @@ void vanne(){
   lcd.LCD_write_string( 0, 0, "Vanne", MENU_NORMAL);
   lcd.LCD_write_string(78, 2, "C", MENU_NORMAL);
   lcd.LCD_write_string(38, 5, "OK", MENU_HIGHLIGHT );
-  int T;
+  int T,TPente;
   char str[10];  
   byte i;
   byte key = 0xFF;
@@ -768,10 +791,12 @@ void vanne(){
           case UP_KEY:
             Serial.println("UP");
             TRef++;
+            autoTemp = 0;
             break;
           case DOWN_KEY:
             Serial.println("DOWN");
             TRef--;
+            autoTemp = 0;
             break;
           case LEFT_KEY:
             Serial.println("LEFT");
@@ -779,7 +804,8 @@ void vanne(){
             break;
           case RIGHT_KEY:
             Serial.println("RIGHT");
-            
+            TRef = TPente;
+            autoTemp = 1;
             break;    
           case CENTER_KEY:
             Serial.println("CENTER");
@@ -789,12 +815,20 @@ void vanne(){
       }
     }
     //temp int et ext
-    T = getTNTC(A2);
-    itoa(T,str,10);
+    int Tint = getTNTC(A2);
+    itoa(Tint,str,10);
     lcd.LCD_write_string(8, 1, str, MENU_NORMAL);
-    T = getTNTC(A3);
-    itoa(T,str,10);
-    sprintf(str,"%02d",T);
+    
+    int Text = getTNTC(A3);
+    TPente = courbeChauffeB + (20-Text) * courbeChauffeA;
+    if(autoTemp){
+      lcd.LCD_write_string( 45, 2, "AUTO", MENU_NORMAL);
+    }
+    else{
+      lcd.LCD_write_string( 45, 2, "MANU", MENU_NORMAL);
+    }
+    //itoa(T,str,10);
+    sprintf(str,"%02d %02d",Text,TPente);
     lcd.LCD_write_string(30, 1, str, MENU_NORMAL);
     
     //Tref et T Nickel
@@ -828,8 +862,8 @@ void vanne(){
 }
 void about(){
 
-  lcd.LCD_write_string( 0, 1, "LCD4884 Shield", MENU_NORMAL);
-  lcd.LCD_write_string( 0, 3, "www.DFrobot.cn", MENU_NORMAL);
+  lcd.LCD_write_string( 0, 1, "SYGMAGYR JUNIOR - RVP 31.3", MENU_NORMAL);
+  lcd.LCD_write_string( 0, 3, "gui.gros@gmail.com", MENU_NORMAL);
   lcd.LCD_write_string(38, 5, "OK", MENU_HIGHLIGHT );
   waitfor_OKkey();
 
