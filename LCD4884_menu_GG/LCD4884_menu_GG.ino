@@ -19,6 +19,7 @@ font Big: Only for numbers 0-9 +/-
 #include "DFrobot_chinese.h"
 #include "QAC31.h"
 #include <TimeLib.h>
+#include <Wire.h>
 
 //keypad debounce parameter
 #define DEBOUNCE_MAX 15
@@ -120,6 +121,11 @@ void setup()
   digitalWrite(I2Pin,1);//D11
   digitalWrite(I3Pin,1);//D12
   
+  // join i2c bus (address optional for master) -> Slave #8
+  Wire.begin(8);
+  Wire.onRequest(requestEvent); // register event
+  Wire.onReceive(receiveEvent); // register event
+  
   //Initialize serial and wait for port to open:
   Serial.begin(9600);
   Serial.println("Setup");
@@ -131,19 +137,24 @@ void setup()
     button_status[i]=0;
     button_flag[i]=0;
   }
-
-  // Setup timer2 -- Prescaler/256
+  
+  /* Configure timer2 in normal mode (pure counting, no PWM / WGM...) */
   TCCR2A &= ~((1<<WGM21) | (1<<WGM20));
   TCCR2B &= ~(1<<WGM22);
+  /* interrupt frequency (Hz) = (Arduino clock speed 16,000,000Hz) / (prescaler * (compare match register + 1))
+    1/(160000000/256/(256-6)) = 4ms interval */
+  // Setup timer2 -- Prescaler/256
   TCCR2B = (1<<CS22)|(1<<CS21);
+  /* Select clock source: internal I/O clock */
   ASSR |=(0<<AS2);
 
-  // Use normal mode  
+  // Use normal mode  (again???)
   TCCR2A =0;  
   //Timer2 Overflow Interrupt Enable  
   TIMSK2 |= (0<<OCIE2A);
   TCNT2=0x6;  // counting starts from 6;  
-  TIMSK2 = (1<<TOIE2);
+  TIMSK2 = (1<<TOIE2);//enable timer
+  /* Processor Status Register, set bit I for Global Interrupt enable */
   SREG|=1<<SREG_I;
 
   //lcd init
@@ -172,6 +183,24 @@ void loop()
   serial_cmd();
   menu_run(menu_items, menu_funcs);
 }
+/* == I2C Events == */
+// function that executes whenever data is requested by master
+// this function is registered as an event, see setup()
+void requestEvent() {
+  Wire.write("hello "); // respond with message of 6 bytes
+  // as expected by master
+}
+// function that executes whenever data is received from master
+// this function is registered as an event, see setup()
+void receiveEvent(int howMany) {
+  while (1 < Wire.available()) { // loop through all but the last
+    char c = Wire.read(); // receive byte as a character
+    Serial.print(c);         // print the character
+  }
+  int x = Wire.read();    // receive byte as an integer
+  Serial.println(x);         // print the integer
+}
+
 int exit_submenu;
 void smenu(){
   exit_submenu = 0;
@@ -937,11 +966,10 @@ void update_adc_key(){
   }
 }
 
-// Timer2 interrupt routine -
+// Timer2 Interrupt Sub Routine -
 // 1/(160000000/256/(256-6)) = 4ms interval
-
 ISR(TIMER2_OVF_vect) {  
-  TCNT2  = 6;
+  TCNT2  = 6;//counter starts at 6
   update_adc_key();
 }
 
