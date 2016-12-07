@@ -128,7 +128,7 @@ void setup()
   
   //Initialize serial and wait for port to open:
   Serial.begin(9600);
-  Serial.println("Setup");
+  Serial.println("Setup, I2C on #8");
   
   // setup interrupt-driven keypad arrays  
   // reset button arrays
@@ -180,25 +180,38 @@ void loop()
   //à chaque loop on regarde l'heure.
   verifModeNuit();
   vanne_commande();
-  serial_cmd();
+  //serial_cmd();
   menu_run(menu_items, menu_funcs);
+  delay(100);
 }
 /* == I2C Events == */
 // function that executes whenever data is requested by master
 // this function is registered as an event, see setup()
 void requestEvent() {
-  Wire.write("hello "); // respond with message of 6 bytes
-  // as expected by master
+  //Wire.write("hello "); // respond with message of 6 bytes
+  // as expected by master  
+  char strT[20];
+  sprintf(strT, "%04d-%02d-%02dT%02d:%02d:%02d",year(),month(),day(), hour(),minute(),second());
+  Serial.println(strT);
+  Wire.write(strT);
 }
 // function that executes whenever data is received from master
 // this function is registered as an event, see setup()
 void receiveEvent(int howMany) {
+  Serial.print("i2c recv: ");
+  Serial.println(howMany);
   while (1 < Wire.available()) { // loop through all but the last
     char c = Wire.read(); // receive byte as a character
     Serial.print(c);         // print the character
   }
   int x = Wire.read();    // receive byte as an integer
   Serial.println(x);         // print the integer
+  
+  //send back time
+  char strT[20];
+  sprintf(strT, "%04d-%02d-%02dT%02d:%02d:%02d",year(),month(),day(), hour(),minute(),second());
+  Serial.println(strT);
+  Wire.write(strT);
 }
 
 int exit_submenu;
@@ -220,12 +233,12 @@ void verifModeNuit(){
   //attention si on est dans une des sous fonctions ça déclenche pas
   if(hour()>=23 || hour()<7){
   //|| hour() == 7 && minute() < 30){
-    if(modeNuitEco == 0){
+    if(modeNuitEco == 0 && false){//desactivation
       //on ferme la vanne
       digitalWrite(I1OnPin,1);//D9
       digitalWrite(I1Pin,1);//D10
 //      TRef = 0;//la commande va fermer
-      //arret bruleur et pompe.
+      //arret bruleur et pompe.      
       digitalWrite(I2Pin,0);
       digitalWrite(I3Pin,0);
       Serial.println("INFO Passage en mode nuit Eco");
@@ -571,6 +584,9 @@ void temperature()
   }
 }
 void toogleBacklight(){
+  //lcd init (au cas où il s'éteind)
+  lcd.LCD_init();
+  lcd.LCD_clear();
   if(backLight){
     backLight = 0;
     lcd.backlight(OFF); // Turn off the backlight  
@@ -771,6 +787,9 @@ int vanne_commande(){
     int Text = getTNTC(A3);
     
     int TPente = courbeChauffeB + (20-Text) * courbeChauffeA;
+    if(modeNuitEco){
+      TPente -= 8; // 8 degre de moins la nuit
+    }
     if(autoTemp){
       TRef = TPente;
     }
