@@ -1,0 +1,3 @@
+[submodule "libraries/DHT11LIB"]
+	path = libraries/DHT11LIB
+	url = https://github.com/jdattilo/DHT11LIB.git
