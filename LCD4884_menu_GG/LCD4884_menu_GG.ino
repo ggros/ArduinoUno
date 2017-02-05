@@ -191,15 +191,16 @@ void requestEvent() {
   //Wire.write("hello "); // respond with message of 6 bytes
   // as expected by master  
   char strT[20];
+  //2016-01-01T00:00:00
   sprintf(strT, "%04d-%02d-%02dT%02d:%02d:%02d",year(),month(),day(), hour(),minute(),second());
-  Serial.println(strT);
+  //Serial.println(strT);
   Wire.write(strT);
 }
 // function that executes whenever data is received from master
 // this function is registered as an event, see setup()
 void receiveEvent(int howMany) {
-  Serial.print("i2c recv: ");
-  Serial.println(howMany);
+  //Serial.print("i2c recv: ");
+  //Serial.println(howMany);
   while (1 < Wire.available()) { // loop through all but the last
     char c = Wire.read(); // receive byte as a character
     Serial.print(c);         // print the character
@@ -210,7 +211,7 @@ void receiveEvent(int howMany) {
   //send back time
   char strT[20];
   sprintf(strT, "%04d-%02d-%02dT%02d:%02d:%02d",year(),month(),day(), hour(),minute(),second());
-  Serial.println(strT);
+  //Serial.println(strT);
   Wire.write(strT);
 }
 
