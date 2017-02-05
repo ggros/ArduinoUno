@@ -42,7 +42,7 @@ font Big: Only for numbers 0-9 +/-
 #define MENU_X	10		// 0-83
 #define MENU_Y	1		// 0-5
 
-
+//valeur de la tension analog, du pad pour chaque touche
 int  adc_key_val[5] ={
   50, 200, 400, 600, 800 };
 
@@ -104,9 +104,9 @@ boolean stringComplete = false;  // whether the string is complete
 
 void setup()
 {
-  //on met l'horloge au moins en 2016
+  //on met l'horloge au moins en 2017
   //setTime(int hr,int min,int sec,int day, int month, int yr);
-  setTime(0,0,0,1,1,2016);
+  setTime(0,0,0,1,1,2017);
   
   // declare the ledPin as an OUTPUT:
   pinMode(ledPin, OUTPUT);
@@ -152,10 +152,10 @@ void setup()
   TCCR2A =0;  
   //Timer2 Overflow Interrupt Enable  
   TIMSK2 |= (0<<OCIE2A);
-  TCNT2=0x6;  // counting starts from 6;  
+  TCNT2 = 0x6;  // counting starts from 6;  
   TIMSK2 = (1<<TOIE2);//enable timer
   /* Processor Status Register, set bit I for Global Interrupt enable */
-  SREG|=1<<SREG_I;
+  SREG |= 1<<SREG_I;
 
   //lcd init
   lcd.LCD_init();
@@ -173,6 +173,7 @@ void setup()
 }
 int backLight = 0;//variable for toggle function below
 int modeNuitEco = 0;
+bool modeNuitArret = false; //arret complet durant la nuit
 void menu_run(char items[][12], void (*f[NUM_MENU_ITEM])(void) );
 /* loop */
 void loop()
@@ -234,7 +235,7 @@ void verifModeNuit(){
   //attention si on est dans une des sous fonctions ça déclenche pas
   if(hour()>=23 || hour()<7){
   //|| hour() == 7 && minute() < 30){
-    if(modeNuitEco == 0 && false){//desactivation
+    if(modeNuitEco == 0 && modeNuitArret){//desactivation
       //on ferme la vanne
       digitalWrite(I1OnPin,1);//D9
       digitalWrite(I1Pin,1);//D10
@@ -242,20 +243,20 @@ void verifModeNuit(){
       //arret bruleur et pompe.      
       digitalWrite(I2Pin,0);
       digitalWrite(I3Pin,0);
-      Serial.println("INFO Passage en mode nuit Eco");
     }
     modeNuitEco = 1;
+    Serial.println("INFO Passage en mode nuit Eco");
   }
   else{
-    if(modeNuitEco == 1){
-      //on ouvre la vanne
+    if(modeNuitEco == 1 && modeNuitArret){
+      //on rouvre la vanne
       digitalWrite(I1OnPin,1);//D9
       digitalWrite(I1Pin,0);//D10
       //dem bruleur et pompe.
       digitalWrite(I2Pin,1);
       digitalWrite(I3Pin,1);
-      Serial.println("INFO Passage en mode jour");
     }
+    Serial.println("INFO Passage en mode jour");
     modeNuitEco = 0;
   }
   //,second());
@@ -783,26 +784,30 @@ void horloge(){
 unsigned long lastCmdMs = 0;
 int vanne_commande(){
     int action = 0;
-    //temp int et ext
-    int Tinterieur = getTNTC(A2);
-    int Text = getTNTC(A3);
-    
-    int TPente = courbeChauffeB + (20-Text) * courbeChauffeA;
-    if(modeNuitEco){
-      TPente -= 8; // 8 degre de moins la nuit
-    }
-    if(autoTemp){
-      TRef = TPente;
-    }
-    //T Nickel, sortie vanne
-    int T = getT();
         
     //Commande
     int delta = 2;
     
-    //on gère la remise à 0 tout les 50J
+    //on ne bouge la vanne que toutes les 10s
+    //on gère aussi la remise à 0 de millis() tout les 50J
     if(millis() > lastCmdMs+10000 || millis() <= lastCmdMs){
       lastCmdMs = millis();
+
+      //lecture temperature, seulement si necessaire
+      //temp int et ext
+      int Tinterieur = getTNTC(A2);
+      int Text = getTNTC(A3);
+      
+      int TPente = courbeChauffeB + (20-Text) * courbeChauffeA;
+      if(modeNuitEco){
+        TPente -= 8; // 8 degre de moins la nuit
+      }
+      if(autoTemp){
+        TRef = TPente;
+      }
+      //T Nickel, sortie vanne
+      int T = getT();
+
       if(T<TRef-delta){
         action = 1;
         digitalWrite(I1OnPin,1);//D9
@@ -993,6 +998,4 @@ ISR(TIMER2_OVF_vect) {
   update_adc_key();
 }
 
-
-
-
+/* vim :set ts=2 sw=2 sts=2 et : */
